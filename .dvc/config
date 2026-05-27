@@ -1,0 +1,5 @@
+[core]
+    remote = storage
+['remote "storage"']
+    url = s3://mishasdk-object-storage/dvc-store
+    endpointurl = https://storage.yandexcloud.net
