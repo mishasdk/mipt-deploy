@@ -22,18 +22,19 @@ def compute_metrics(
     y_prob = model.predict_proba(X_test)[:, 1]
 
     metrics = {
-        "Accuracy": round(accuracy_score(y_test, y_pred), 4),
-        "ROC-AUC": round(roc_auc_score(y_test, y_prob), 4),
-        "F1": round(f1_score(y_test, y_pred), 4),
-        "Precision": round(precision_score(y_test, y_pred), 4),
-        "Recall": round(recall_score(y_test, y_pred), 4),
+        "accuracy": round(accuracy_score(y_test, y_pred), 4),
+        "roc_auc": round(roc_auc_score(y_test, y_prob), 4),
+        "f1": round(f1_score(y_test, y_pred), 4),
+        "precision": round(precision_score(y_test, y_pred), 4),
+        "recall": round(recall_score(y_test, y_pred), 4),
     }
 
     if X_train is not None and y_train is not None:
         cv_roc = cross_val_score(
             model, X_train, y_train, cv=cv, scoring="roc_auc"
         ).mean()
-        metrics["CV ROC-AUC (5-fold)"] = round(cv_roc, 4)
+        metrics["cv_roc_auc"] = round(cv_roc, 4)
+
     return metrics
 
 

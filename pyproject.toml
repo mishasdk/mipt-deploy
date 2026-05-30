@@ -12,3 +12,6 @@ dependencies = [
     "lightgbm",
     "optuna"
 ]
+
+[project.scripts]
+churn-pipeline = "ml_churn.pipeline:main"

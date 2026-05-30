@@ -1,7 +1,8 @@
 import optuna
 import pandas as pd
-from lightgbm import LGBMClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
+
+from ml_churn import model
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -25,12 +26,10 @@ def run_optuna_study(
             "colsample_bytree": trial.suggest_float("colsample_bytree", 0.5, 1.0),
             "reg_alpha": trial.suggest_float("reg_alpha", 1e-8, 10.0, log=True),
             "reg_lambda": trial.suggest_float("reg_lambda", 1e-8, 10.0, log=True),
-            "random_state": random_state,
-            "verbose": -1,
         }
-        model = LGBMClassifier(**params)
+        clf = model.build_lgbm(random_state=random_state, **params)
         scores = cross_val_score(
-            model, X_train, y_train, cv=cv, scoring="roc_auc", n_jobs=-1
+            clf, X_train, y_train, cv=cv, scoring="roc_auc", n_jobs=-1
         )
         return scores.mean()
 
