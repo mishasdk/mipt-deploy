@@ -1,0 +1,19 @@
+#cloud-config
+users:
+  - name: ${ssh_user}
+    groups: sudo
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+
+package_update: true
+
+packages:
+  - curl
+
+runcmd:
+  - curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+  - sh /tmp/get-docker.sh
+  - usermod -aG docker ${ssh_user}
+  - systemctl enable --now docker

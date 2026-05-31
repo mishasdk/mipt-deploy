@@ -1,0 +1,22 @@
+# Copy to terraform.tfvars and fill in.
+
+# --- Auth: pick ONE ---
+# Option A — short-lived IAM token (yc iam create-token):
+yc_token = "t1.9eud..."
+# Option B — service account key file (then leave yc_token = ""):
+# yc_sa_key_file = "key.json"
+
+yc_cloud_id  = "b1g..."
+yc_folder_id = "b1g..."
+yc_zone      = "ru-central1-a"
+
+# SSH key placed on the VM
+ssh_user            = "ubuntu"
+ssh_public_key_path = "~/.ssh/id_rsa.pub"
+
+# VM shape (defaults: 2 cores @ 20% fraction, 8 GB RAM)
+# vm_cores         = 2
+# vm_core_fraction = 20
+# vm_memory_gb     = 8
+# vm_disk_gb       = 30
+# preemptible      = true
