@@ -37,6 +37,12 @@ services:
         --static-prefix /mlflow
     expose:
       - "5000"
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5000/mlflow/health').status==200 else 1)\"" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   ml-service:
     build:
@@ -44,23 +50,28 @@ services:
       dockerfile: infra/docker/ml_service.Dockerfile
     depends_on:
       mlflow:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
     environment:
-      # MLflow runs with --static-prefix /mlflow, so even the in-network API
-      # lives under /mlflow (the bare root returns 404).
       MLFLOW_TRACKING_URI: http://mlflow:5000/mlflow
       MODEL_NAME: ${MODEL_NAME:-churn-lgbm}
       FEATURE_STORE_URI: postgresql+psycopg2://${FEATURE_STORE_USER:-features}:${FEATURE_STORE_PASSWORD:-features}@postgres:5432/${FEATURE_STORE_DB:-features}
     expose:
       - "8000"
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\"" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
     restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:v2.54.1
     depends_on:
-      - ml-service
+      ml-service:
+        condition: service_healthy
     volumes:
       - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
@@ -82,7 +93,8 @@ services:
   grafana:
     image: grafana/grafana:11.2.0
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
@@ -155,7 +167,8 @@ services:
       test: [ "CMD", "curl", "--fail", "http://localhost:8080/airflow/health" ]
       interval: 10s
       timeout: 10s
-      retries: 5
+      retries: 10
+      start_period: 120s
     restart: unless-stopped
 
   airflow-scheduler:
@@ -181,16 +194,27 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags
       - airflow_logs:/opt/airflow/logs
+    healthcheck:
+      test: [ "CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\"" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
     restart: unless-stopped
 
   nginx:
     image: nginx:1.27-alpine
     depends_on:
-      - ml-service
-      - mlflow
-      - prometheus
-      - grafana
-      - airflow-webserver
+      ml-service:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+      grafana:
+        condition: service_healthy
+      airflow-webserver:
+        condition: service_healthy
     environment:
       PROXY_USER: ${PROXY_USER:-admin}
       PROXY_PASSWORD: ${PROXY_PASSWORD:-admin}
@@ -203,6 +227,11 @@ services:
              exec nginx -g 'daemon off;'"
     ports:
       - "80:80"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/healthz || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
 volumes:
