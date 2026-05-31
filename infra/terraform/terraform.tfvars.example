@@ -14,9 +14,9 @@ yc_zone      = "ru-central1-a"
 ssh_user            = "ubuntu"
 ssh_public_key_path = "~/.ssh/id_rsa.pub"
 
-# VM shape (defaults: 2 cores @ 20% fraction, 8 GB RAM)
+# VM shape
 # vm_cores         = 2
 # vm_core_fraction = 20
 # vm_memory_gb     = 8
 # vm_disk_gb       = 30
-# preemptible      = true
+# preemptible      = false

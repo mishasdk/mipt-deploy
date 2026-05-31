@@ -70,7 +70,7 @@ variable "image_family" {
 variable "preemptible" {
   description = "Use a preemptible (cheaper, interruptible) instance."
   type        = bool
-  default     = true
+  default     = false
 }
 
 # --- Existing network (optional) ---------------------------------------------
