@@ -161,6 +161,7 @@ services:
     expose:
       - "8080"
     volumes:
+      - ..:/opt/airflow/project
       - ./dags:/opt/airflow/dags
       - airflow_logs:/opt/airflow/logs
     healthcheck:
@@ -192,6 +193,7 @@ services:
       PROJECT_DIR: /opt/airflow/project
     command: scheduler
     volumes:
+      - ..:/opt/airflow/project
       - ./dags:/opt/airflow/dags
       - airflow_logs:/opt/airflow/logs
     healthcheck:

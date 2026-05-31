@@ -72,9 +72,13 @@ jobs:
               fi
             fi
 
+            echo "--- Making DVC working dirs writable by the airflow container (uid 50000) ---"
+            mkdir -p "$REPO_DIR/data/raw"
+            chmod 777 "$REPO_DIR/.dvc" "$REPO_DIR/data" "$REPO_DIR/data/raw"
+
             echo "--- Launching services ---"
             cd "$REPO_DIR/infra"
-            sudo docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --build --remove-orphans --wait --wait-timeout 600
+            sudo docker compose -f docker-compose.yml up -d --build --remove-orphans --wait --wait-timeout 600
           '
 
       - name: Clean up local secrets
