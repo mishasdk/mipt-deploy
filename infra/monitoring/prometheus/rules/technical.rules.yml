@@ -1,0 +1,39 @@
+# Technical-level alert rules. Thresholds come from docs/03-sli-slo.md.
+# MVP: no Alertmanager, no actions — these are only visible in Prometheus /alerts.
+groups:
+  - name: technical
+    rules:
+      - alert: ServiceDown
+        expr: up{job="serving"} == 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "Serving is down"
+          description: "Prometheus cannot scrape the serving target (up == 0) for more than 1 minute."
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{job="serving", status_code=~"5.."}[5m]))
+            /
+          sum(rate(http_requests_total{job="serving"}[5m]))
+            > 0.01
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "High 5xx error rate on serving"
+          description: "5xx error ratio is above the 1% SLO over the last 5m (current: {{ $value | humanizePercentage }})."
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket{job="serving"}[5m])) by (le)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 latency on serving"
+          description: "p95 request latency is above the 0.5s SLO over the last 5m (current: {{ $value }}s)."

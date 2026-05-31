@@ -7,6 +7,7 @@ services:
       POSTGRES_PASSWORD: ${MLFLOW_DB_PASSWORD:-mlflow}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./sql/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${MLFLOW_DB_USER:-mlflow}" ]
       interval: 5s
@@ -16,7 +17,7 @@ services:
   mlflow:
     build:
       context: .
-      dockerfile: mlflow.Dockerfile
+      dockerfile: docker/mlflow.Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
@@ -33,8 +34,158 @@ services:
         --serve-artifacts
         --artifacts-destination s3://${MLFLOW_S3_BUCKET_NAME}/${MLFLOW_S3_DIR_NAME}
         --disable-security-middleware
+        --static-prefix /mlflow
+    expose:
+      - "5000"
+
+  ml-service:
+    build:
+      context: ..
+      dockerfile: infra/docker/ml_service.Dockerfile
+    depends_on:
+      - mlflow
+    environment:
+      # MLflow runs with --static-prefix /mlflow, so even the in-network API
+      # lives under /mlflow (the bare root returns 404).
+      MLFLOW_TRACKING_URI: http://mlflow:5000/mlflow
+      MODEL_NAME: ${MODEL_NAME:-churn-lgbm}
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    depends_on:
+      - ml-service
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.external-url=http://localhost/prometheus"
+      - "--web.route-prefix=/"
+    expose:
+      - "9090"
+    healthcheck:
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://localhost/grafana
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    expose:
+      - "3000"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  airflow-webserver:
+    image: mipt-airflow:2.9.2
+    build:
+      context: ..
+      dockerfile: infra/docker/airflow.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost/airflow
+      PYTHONPATH: /opt/airflow/project/src
+      MLFLOW_TRACKING_URI: http://mlflow:5000/mlflow
+      AWS_ACCESS_KEY_ID: ${YC_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${YC_SECRET_ACCESS_KEY}
+      PROJECT_DIR: /opt/airflow/project
+    entrypoint: /bin/bash
+    command: >
+      -c "airflow db migrate &&
+          airflow users create
+            --username ${AIRFLOW_ADMIN_USER:-admin}
+            --password ${AIRFLOW_ADMIN_PASSWORD:-admin}
+            --firstname Admin --lastname User
+            --role Admin --email admin@example.com || true &&
+          airflow webserver"
+    expose:
+      - "8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+    healthcheck:
+      test: [ "CMD", "curl", "--fail", "http://localhost:8080/airflow/health" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  airflow-scheduler:
+    image: mipt-airflow:2.9.2
+    build:
+      context: ..
+      dockerfile: infra/docker/airflow.Dockerfile
+    depends_on:
+      airflow-webserver:
+        condition: service_healthy
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PYTHONPATH: /opt/airflow/project/src
+      MLFLOW_TRACKING_URI: http://mlflow:5000/mlflow
+      AWS_ACCESS_KEY_ID: ${YC_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${YC_SECRET_ACCESS_KEY}
+      PROJECT_DIR: /opt/airflow/project
+    command: scheduler
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - airflow_logs:/opt/airflow/logs
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - ml-service
+      - mlflow
+      - prometheus
+      - grafana
+      - airflow-webserver
+    environment:
+      PROXY_USER: ${PROXY_USER:-admin}
+      PROXY_PASSWORD: ${PROXY_PASSWORD:-admin}
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/proxy_common.conf:/etc/nginx/proxy_common.conf:ro
+    command: >
+      sh -c "apk add --no-cache apache2-utils >/dev/null 2>&1 &&
+             htpasswd -bc /etc/nginx/.htpasswd \"$$PROXY_USER\" \"$$PROXY_PASSWORD\" &&
+             exec nginx -g 'daemon off;'"
     ports:
-      - "5001:5000"
+      - "80:80"
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+  airflow_logs:
+  prometheus_data:
+  grafana_data:

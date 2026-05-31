@@ -1,4 +1,5 @@
 import pandas as pd
+
 from sklearn.base import BaseEstimator
 from sklearn.metrics import (
     accuracy_score,
@@ -36,11 +37,3 @@ def compute_metrics(
         metrics["cv_roc_auc"] = round(cv_roc, 4)
 
     return metrics
-
-
-def summary_table(results: dict) -> pd.io.formats.style.Styler:
-    df = pd.DataFrame(results).T
-    df.index.name = "Model"
-    return df.style.highlight_max(
-        axis=0, props="font-weight: bold; color: green"
-    ).format("{:.4f}")

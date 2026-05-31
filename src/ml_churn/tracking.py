@@ -13,10 +13,8 @@ import pandas as pd
 from sklearn.base import BaseEstimator
 
 
-def create_run(experiment: str, run_name: str, tracking_uri: str | None = None) -> str:
+def create_run(experiment: str, run_name: str) -> str:
     """Open a run and return its run_id. The id is what gets passed between steps."""
-    if tracking_uri:
-        mlflow.set_tracking_uri(tracking_uri)
     client = MlflowClient()
     experiment_id = _get_or_create_experiment_id(client, experiment)
     run = client.create_run(experiment_id, run_name=run_name, tags=resolve_tags())

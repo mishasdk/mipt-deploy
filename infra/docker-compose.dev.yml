@@ -1,0 +1,8 @@
+services:
+  airflow-webserver:
+    volumes:
+      - ..:/opt/airflow/project
+
+  airflow-scheduler:
+    volumes:
+      - ..:/opt/airflow/project
