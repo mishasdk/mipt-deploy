@@ -1,0 +1,22 @@
+groups:
+  - name: model
+    rules:
+      - alert: ModelQualityLow
+        expr: model_quality_score{job="serving", metric="roc_auc"} < 0.75
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Deployed model ROC-AUC below threshold"
+          description: >
+            Model version {{ $labels.model_version }} has ROC-AUC = {{ $value | humanizePercentage }},
+            below the 0.75 baseline SLO.
+
+      - alert: ModelNotLoaded
+        expr: absent(model_info{job="serving"})
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model has not been loaded"
+          description: "No model_info series from the serving job — the model may not have been loaded yet."

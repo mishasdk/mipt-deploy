@@ -1,4 +1,5 @@
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -37,9 +38,15 @@ class ModelService:
     by a lock so concurrent requests trigger only a single load.
     """
 
-    def __init__(self, model_name: str, tracking_uri: str | None = None) -> None:
+    def __init__(
+        self,
+        model_name: str,
+        tracking_uri: str | None = None,
+        on_load: Callable[["ModelMetadata"], None] | None = None,
+    ) -> None:
         self._model_name = model_name
         self._tracking_uri = tracking_uri
+        self._on_load = on_load
         self._lock = threading.Lock()
         self._loaded: LoadedModel | None = None
 
@@ -85,6 +92,8 @@ class ModelService:
 
         metadata = self._build_metadata(client, mv, model)
         print(f"[model_loader] loaded '{self._model_name}' v{mv.version} into memory")
+        if self._on_load is not None:
+            self._on_load(metadata)
         return LoadedModel(model=model, metadata=metadata)
 
     def _build_metadata(self, client: MlflowClient, mv, model) -> ModelMetadata:

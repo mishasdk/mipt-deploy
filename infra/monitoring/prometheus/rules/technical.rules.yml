@@ -37,3 +37,12 @@ groups:
         annotations:
           summary: "High p95 latency on serving"
           description: "p95 request latency is above the 0.5s SLO over the last 5m (current: {{ $value }}s)."
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes{job="serving"} > 1.5 * 1024 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High RSS memory on serving"
+          description: "Serving process RSS is above 1.5 GiB for more than 5m (current: {{ $value | humanize1024 }}B)."

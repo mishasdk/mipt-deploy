@@ -5,7 +5,7 @@ from fastapi import FastAPI, HTTPException
 from ml_churn import feature_store
 from ml_service.config import settings
 from ml_service.features import FeatureStoreProvider, RequestFeatureProvider
-from ml_service.metrics import setup_metrics
+from ml_service.metrics import record_prediction, setup_metrics, update_model_quality
 from ml_service.model_loader import LoadedModel, ModelService
 from ml_service.schemas import (
     HealthResponse,
@@ -23,6 +23,7 @@ setup_metrics(app)
 model_service = ModelService(
     model_name=settings.model_name,
     tracking_uri=settings.tracking_uri,
+    on_load=update_model_quality,
 )
 
 feature_store_engine = (
@@ -36,6 +37,7 @@ def _predict(loaded: LoadedModel, frame: pd.DataFrame) -> PredictResponse:
     model = loaded.model
     probabilities = model.predict_proba(frame)[:, 1]
     labels = model.predict(frame)
+    record_prediction(loaded.metadata.version, labels.tolist(), probabilities.tolist())
     predictions = [
         Prediction(churn=int(label), churn_probability=float(prob))
         for label, prob in zip(labels, probabilities)
