@@ -15,6 +15,8 @@ dependencies = [
     "scikit-learn",
     "mlflow",
     "lightgbm",
+    "sqlalchemy",
+    "psycopg2-binary",
 ]
 
 [project.optional-dependencies]

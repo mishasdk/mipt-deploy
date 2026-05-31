@@ -43,12 +43,16 @@ services:
       context: ..
       dockerfile: infra/docker/ml_service.Dockerfile
     depends_on:
-      - mlflow
+      mlflow:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     environment:
       # MLflow runs with --static-prefix /mlflow, so even the in-network API
       # lives under /mlflow (the bare root returns 404).
       MLFLOW_TRACKING_URI: http://mlflow:5000/mlflow
       MODEL_NAME: ${MODEL_NAME:-churn-lgbm}
+      FEATURE_STORE_URI: postgresql+psycopg2://${FEATURE_STORE_USER:-features}:${FEATURE_STORE_PASSWORD:-features}@postgres:5432/${FEATURE_STORE_DB:-features}
     expose:
       - "8000"
     restart: unless-stopped
@@ -114,6 +118,7 @@ services:
       AIRFLOW__WEBSERVER__BASE_URL: http://localhost/airflow
       PYTHONPATH: /opt/airflow/project/src
       MLFLOW_TRACKING_URI: http://mlflow:5000/mlflow
+      FEATURE_STORE_URI: postgresql+psycopg2://${FEATURE_STORE_USER:-features}:${FEATURE_STORE_PASSWORD:-features}@postgres:5432/${FEATURE_STORE_DB:-features}
       AWS_ACCESS_KEY_ID: ${YC_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${YC_SECRET_ACCESS_KEY}
       PROJECT_DIR: /opt/airflow/project
@@ -153,6 +158,7 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       PYTHONPATH: /opt/airflow/project/src
       MLFLOW_TRACKING_URI: http://mlflow:5000/mlflow
+      FEATURE_STORE_URI: postgresql+psycopg2://features:features@postgres:5432/features
       AWS_ACCESS_KEY_ID: ${YC_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${YC_SECRET_ACCESS_KEY}
       PROJECT_DIR: /opt/airflow/project

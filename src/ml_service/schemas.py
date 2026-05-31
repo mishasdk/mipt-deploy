@@ -48,6 +48,20 @@ class PredictRequest(BaseModel):
     )
 
 
+class PredictByIdRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [{"customer_ids": ["7590-VHVEG", "5575-GNVDE"]}]
+        }
+    )
+
+    customer_ids: list[str] = Field(
+        ...,
+        description="Batch of entity keys (customerID). Features are fetched from "
+        "the feature store; the caller does not send raw feature values.",
+    )
+
+
 class Prediction(BaseModel):
     churn: int = Field(..., description="Predicted label (1 = will churn).")
     churn_probability: float = Field(..., description="Probability of churn.")

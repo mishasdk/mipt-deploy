@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 from airflow.decorators import dag, task
 from airflow.models.param import Param
-from ml_churn import data, evaluate as eval_mod, model, registry, tracking
+from ml_churn import data, evaluate as eval_mod, feature_store, model, registry, tracking
 from ml_churn import tune as tune_mod
 
 
@@ -37,7 +37,7 @@ def churn_training():
         data_path = f"{project_dir}/data/raw/{dataset_name}"
 
         subprocess.run(
-            ["dvc", "pull", f"{data_path}.dvc"],
+            ["dvc", "pull", f"data/raw/{dataset_name}.dvc"],
             cwd=project_dir,
             check=True,
         )
@@ -54,17 +54,30 @@ def churn_training():
         tmp_dir = Path("/tmp/churn_dag") / context["run_id"]
         tmp_dir.mkdir(parents=True, exist_ok=True)
 
-        return str(df.to_pickle(tmp_dir / "df.pkl"))
+        df_path = tmp_dir / "df.pkl"
+        df.to_pickle(df_path)
+        return str(df_path)
+
+    @task
+    def materialize_features(**context) -> int:
+        """Push cleaned + encoded features into the feature store (full refresh).
+
+        Runs before split_data so that training reads features from the store,
+        guaranteeing parity with online serving.
+        """
+        df_path = context["ti"].xcom_pull(task_ids="preprocess_data")
+        df = pd.read_pickle(df_path)
+        return feature_store.materialize(df)
 
     @task
     def split_data(**context) -> dict:
         p = context["params"]
-        df_path = context["ti"].xcom_pull(task_ids="preprocess_data")
 
-        df = pd.read_pickle(df_path)
+        # Offline read: features come from the store, not the preprocess pickle.
+        df = feature_store.read_training_frame()
 
         split = data.make_split(df, test_size=p["test_size"], random_state=p["random_state"])
-        base = Path(df_path).parent
+        base = Path(context["ti"].xcom_pull(task_ids="preprocess_data")).parent
         paths = {
             "X_train": str(base / "X_train.pkl"),
             "X_test": str(base / "X_test.pkl"),
@@ -186,6 +199,7 @@ def churn_training():
     (
         pull_data()
         >> preprocess_data()
+        >> materialize_features()
         >> split_data()
         >> create_run()
         >> log_dataset()

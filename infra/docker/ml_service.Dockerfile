@@ -9,7 +9,8 @@ WORKDIR /opt/ml-churn
 COPY pyproject.toml ./
 COPY src/ ./src/
 
-RUN pip install --no-cache-dir ".[service]"
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install ".[service]"
 
 EXPOSE 8000
 

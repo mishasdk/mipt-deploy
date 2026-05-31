@@ -1,13 +1,16 @@
+import pandas as pd
 import uvicorn
 from fastapi import FastAPI, HTTPException
 
+from ml_churn import feature_store
 from ml_service.config import settings
-from ml_service.features import RequestFeatureProvider
+from ml_service.features import FeatureStoreProvider, RequestFeatureProvider
 from ml_service.metrics import setup_metrics
-from ml_service.model_loader import ModelService
+from ml_service.model_loader import LoadedModel, ModelService
 from ml_service.schemas import (
     HealthResponse,
     ModelMetadataResponse,
+    PredictByIdRequest,
     PredictRequest,
     PredictResponse,
     Prediction,
@@ -21,6 +24,27 @@ model_service = ModelService(
     model_name=settings.model_name,
     tracking_uri=settings.tracking_uri,
 )
+
+feature_store_engine = (
+    feature_store.get_engine(settings.feature_store_uri)
+    if settings.feature_store_uri
+    else None
+)
+
+
+def _predict(loaded: LoadedModel, frame: pd.DataFrame) -> PredictResponse:
+    model = loaded.model
+    probabilities = model.predict_proba(frame)[:, 1]
+    labels = model.predict(frame)
+    predictions = [
+        Prediction(churn=int(label), churn_probability=float(prob))
+        for label, prob in zip(labels, probabilities)
+    ]
+    return PredictResponse(
+        model_name=loaded.metadata.name,
+        model_version=loaded.metadata.version,
+        predictions=predictions,
+    )
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -61,25 +85,40 @@ def predict(request: PredictRequest) -> PredictResponse:
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    model = loaded.model
     provider = RequestFeatureProvider(feature_order=loaded.metadata.features)
     try:
         frame = provider.to_frame(request.instances)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    probabilities = model.predict_proba(frame)[:, 1]
-    labels = model.predict(frame)
+    return _predict(loaded, frame)
 
-    predictions = [
-        Prediction(churn=int(label), churn_probability=float(prob))
-        for label, prob in zip(labels, probabilities)
-    ]
-    return PredictResponse(
-        model_name=loaded.metadata.name,
-        model_version=loaded.metadata.version,
-        predictions=predictions,
+
+@app.post("/predict_by_id", response_model=PredictResponse)
+def predict_by_id(request: PredictByIdRequest) -> PredictResponse:
+    """Online inference by entity key. Features are read from the feature store."""
+    if not request.customer_ids:
+        raise HTTPException(status_code=422, detail="`customer_ids` must be non-empty")
+    if feature_store_engine is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Feature store is not configured (FEATURE_STORE_URI unset)",
+        )
+
+    try:
+        loaded = model_service.ensure_loaded()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    provider = FeatureStoreProvider(
+        feature_order=loaded.metadata.features, engine=feature_store_engine
     )
+    try:
+        frame = provider.to_frame(request.customer_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    return _predict(loaded, frame)
 
 
 def main() -> None:
