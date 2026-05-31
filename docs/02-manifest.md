@@ -24,11 +24,11 @@
 |---|---|---|
 | 1 | Автоматический пайплайн обучения | Airflow DAG |
 | 2 | Версионирование данных и моделей | DVC, MLflow Model Registry |
-| 3 | Feature Store | Feast, Postgres — расчёт и хранение фич, чтение при инференсе |
-| 4 | Сервинг с переключением трафика | FastAPI (blue + green), Nginx, canary/blue-green деплой из DAG |
-| 5 | Мониторинг качества модели на проде | Prometheus, Graphana |
-| 6 | Автоматический откат при деградации | Gate-шаг в DAG блокирует деплой; мониторинг триггерит откат при нарушении SLO |
-| 7 | CI/CD для переобучения и деплоя | GitHub Actions |
+| 3 | Хранилище датасетов и моделей | S3 object storage |
+| 4 | Feature Store | Postgres — расчёт и хранение фич, чтение при инференсе |
+| 5 | Прокси с API gateway | Nginx |
+| 6 | Мониторинг качества модели на проде | Prometheus, Graphana |
+| 7 | CI/CD для деплоя | GitHub Actions |
 
 ## 5. Осуществимость
 
