@@ -1,0 +1,83 @@
+name: Deploy to VM
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VM_IP: ${{ secrets.VM_IP }}
+      VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+      ENV_FILE: ${{ secrets.ENV_FILE }}
+
+    steps:
+      - name: Set up SSH key and known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -T 30 -H "$VM_IP" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Write .env from secret
+        run: |
+          printf '%s' "$ENV_FILE" > /tmp/deploy.env
+
+      - name: Ensure remote infra directory exists
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=yes \
+              mishasdk@"$VM_IP" \
+              'mkdir -p ~/mipt-ml-deploy/infra'
+
+      - name: Copy .env to VM
+        run: |
+          scp -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=yes \
+              /tmp/deploy.env \
+              mishasdk@"$VM_IP":~/mipt-ml-deploy/infra/.env
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=yes \
+              mishasdk@"$VM_IP" \
+              'chmod 600 ~/mipt-ml-deploy/infra/.env'
+
+      - name: Deploy on VM
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=yes \
+              -o ServerAliveInterval=60 \
+              -o ServerAliveCountMax=10 \
+              mishasdk@"$VM_IP" '
+            set -euo pipefail
+
+            REPO_DIR="$HOME/mipt-ml-deploy"
+            REPO_URL="https://github.com/mishasdk/mipt-deploy.git"
+
+            if [ -d "$REPO_DIR/.git" ]; then
+              echo "--- Pulling latest changes ---"
+              git -C "$REPO_DIR" fetch origin main
+              git -C "$REPO_DIR" reset --hard origin/main
+            else
+              echo "--- Cloning repository (first run) ---"
+              [ -f "$REPO_DIR/infra/.env" ] && cp "$REPO_DIR/infra/.env" /tmp/.env.deploy.bak
+              rm -rf "$REPO_DIR"
+              git clone "$REPO_URL" "$REPO_DIR"
+              if [ -f /tmp/.env.deploy.bak ]; then
+                mv /tmp/.env.deploy.bak "$REPO_DIR/infra/.env"
+                chmod 600 "$REPO_DIR/infra/.env"
+              fi
+            fi
+
+            echo "--- Launching services ---"
+            cd "$REPO_DIR/infra"
+            sudo docker compose up -d --build --remove-orphans --wait --wait-timeout 600
+          '
+
+      - name: Clean up local secrets
+        if: always()
+        run: |
+          rm -f /tmp/deploy.env ~/.ssh/deploy_key

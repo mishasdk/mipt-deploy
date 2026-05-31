@@ -102,7 +102,7 @@ services:
       retries: 5
     restart: unless-stopped
 
-  airflow-webserver:
+  airflow-init:
     image: mipt-airflow:2.9.2
     build:
       context: ..
@@ -115,13 +115,6 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__WEBSERVER__BASE_URL: http://localhost/airflow
-      PYTHONPATH: /opt/airflow/project/src
-      MLFLOW_TRACKING_URI: http://mlflow:5000/mlflow
-      FEATURE_STORE_URI: postgresql+psycopg2://${FEATURE_STORE_USER:-features}:${FEATURE_STORE_PASSWORD:-features}@postgres:5432/${FEATURE_STORE_DB:-features}
-      AWS_ACCESS_KEY_ID: ${YC_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${YC_SECRET_ACCESS_KEY}
-      PROJECT_DIR: /opt/airflow/project
     entrypoint: /bin/bash
     command: >
       -c "airflow db migrate &&
@@ -129,8 +122,30 @@ services:
             --username ${AIRFLOW_ADMIN_USER:-admin}
             --password ${AIRFLOW_ADMIN_PASSWORD:-admin}
             --firstname Admin --lastname User
-            --role Admin --email admin@example.com || true &&
-          airflow webserver"
+            --role Admin --email admin@example.com || true"
+    restart: "no"
+
+  airflow-webserver:
+    image: mipt-airflow:2.9.2
+    build:
+      context: ..
+      dockerfile: infra/docker/airflow.Dockerfile
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__BASE_URL: http://localhost/airflow
+      PYTHONPATH: /opt/airflow/project/src
+      MLFLOW_TRACKING_URI: http://mlflow:5000/mlflow
+      FEATURE_STORE_URI: postgresql+psycopg2://${FEATURE_STORE_USER:-features}:${FEATURE_STORE_PASSWORD:-features}@postgres:5432/${FEATURE_STORE_DB:-features}
+      AWS_ACCESS_KEY_ID: ${YC_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${YC_SECRET_ACCESS_KEY}
+      PROJECT_DIR: /opt/airflow/project
+    command: airflow webserver
     expose:
       - "8080"
     volumes:
@@ -149,8 +164,8 @@ services:
       context: ..
       dockerfile: infra/docker/airflow.Dockerfile
     depends_on:
-      airflow-webserver:
-        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
     environment:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${AIRFLOW_DB_USER:-airflow}:${AIRFLOW_DB_PASSWORD:-airflow}@postgres:5432/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
